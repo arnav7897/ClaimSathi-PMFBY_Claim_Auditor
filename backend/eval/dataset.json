@@ -1,0 +1,184 @@
+{
+  "cases": [
+    {
+      "case_id": "eval-001",
+      "description": "Supported: insurer rejected prevented-sowing claim because farmer sowed after the notified cut-off date despite State-declared prevented sowing (farmer-side violation)",
+      "notice_text": "Claim rejected: You sowed your paddy crop after the sowing cut-off date notified for your district. The prevented sowing (Beej Bima/Closed Sowing) claim applies only when the insured area is prevented from sowing due to deficit rainfall or adverse seasonal conditions, as assessed by the State Government. Since sowing was completed by you after the cut-off date, the claim for prevented sowing assistance is rejected.",
+      "facts": {
+        "crop": "paddy",
+        "season": "kharif 2023",
+        "district": "Bilaspur",
+        "state": "Chhattisgarh",
+        "rejection_reason": "farmer sowed after the notified sowing cut-off date; prevented sowing claim not applicable",
+        "category": "prevented_sowing"
+      },
+      "ground_truth": "SUPPORTED",
+      "ground_truth_basis": "Prevented sowing cover (OG 2023 Section 5.2.1) applies when insured area is prevented from sowing due to deficit rainfall/adverse conditions; sowing after cut-off by choice is outside the trigger."
+    },
+    {
+      "case_id": "eval-002",
+      "description": "NOT_SUPPORTED: insurer rejected yield-shortfall claim saying drought is not a covered peril",
+      "notice_text": "Your claim for yield shortfall in soybean crop is rejected because drought and dry spell conditions are not covered perils under PMFBY. Only hailstorm and fire damage are covered for your crop.",
+      "facts": {
+        "crop": "soybean",
+        "season": "kharif 2023",
+        "district": "Indore",
+        "state": "Madhya Pradesh",
+        "rejection_reason": "drought/dry spell not a covered peril; only hailstorm and fire covered",
+        "category": "yield_shortfall"
+      },
+      "ground_truth": "NOT_SUPPORTED",
+      "ground_truth_basis": "OG 2023 Section 5.1: basic cover is comprehensive yield-loss insurance against non-preventable risks including drought, dry spells, flood, inundation, pests, disease, etc. The rejection directly contradicts policy text."
+    },
+    {
+      "case_id": "eval-003",
+      "description": "Ambiguous: rejection cites unspecified 'State provisions' without stating the actual ground",
+      "notice_text": "Your claim has been examined and rejected as per State-specific provisions applicable to your district. For details you may contact the insurance company or the district agriculture office.",
+      "facts": {
+        "crop": "wheat",
+        "season": "rabi 2023",
+        "district": "Bilaspur",
+        "state": "Chhattisgarh",
+        "rejection_reason": "rejected per unspecified State-specific provisions",
+        "category": "other"
+      },
+      "ground_truth": "INSUFFICIENT_EVIDENCE",
+      "ground_truth_basis": "No specific rule or fact pattern stated; the policy corpus cannot confirm or refute an unspecified ground."
+    },
+    {
+      "case_id": "eval-004",
+      "description": "Adversarial: insurer cites a fabricated 7-day claim-filing window that does not exist in the guidelines",
+      "notice_text": "Your prevented sowing claim is rejected because you did not file the claim within 7 days of the sowing cut-off date. PMFBY guidelines require all prevented sowing claims to be filed within 7 days, and your intimation was received on day 12.",
+      "facts": {
+        "crop": "maize",
+        "season": "kharif 2023",
+        "district": "Guntur",
+        "state": "Andhra Pradesh",
+        "rejection_reason": "prevented sowing claim not filed within an alleged 7-day filing window",
+        "category": "prevented_sowing"
+      },
+      "ground_truth": "INSUFFICIENT_EVIDENCE",
+      "ground_truth_basis": "The alleged 7-day filing window does not appear in the OG 2023 corpus. Claims are on-area-assessment basis with defined seasonality discipline; the cited window cannot be verified. Fail-closed."
+    },
+    {
+      "case_id": "eval-005",
+      "description": "Supported: post-harvest loss claim rejected because crop not left in field (cut and spread) beyond 2 weeks and peril was unseasonal rain for a stored crop",
+      "notice_text": "Your post-harvest loss claim is rejected. Post-harvest coverage under PMFBY applies only up to a maximum of two weeks from harvesting, and only to crops required to be dried in cut and spread or small bundled condition after harvesting, against hailstorm, cyclone, cyclonic rains and unseasonal rains. Your crop was harvested and removed from the field the same day, and the loss occurred in storage.",
+      "facts": {
+        "crop": "groundnut",
+        "season": "rabi 2023",
+        "district": "Junagadh",
+        "state": "Gujarat",
+        "rejection_reason": "post-harvest cover inapplicable: crop removed from field same day and loss in storage, beyond 2-week field window",
+        "category": "yield_shortfall"
+      },
+      "ground_truth": "SUPPORTED",
+      "ground_truth_basis": "OG 2023 Section 5.2.3 restricts post-harvest losses to 2 weeks from harvesting for crops dried in cut and spread/bundled condition left in the field."
+    },
+    {
+      "case_id": "eval-006",
+      "description": "NOT_SUPPORTED: insurer claims localized calamity claims need individual field assessment by farmer",
+      "notice_text": "Your hailstorm loss claim under localized calamity is rejected because you failed to submit an individual field loss report within 48 hours of the event. Localized calamity claims cannot be processed on an area basis and require per-farm notification.",
+      "facts": {
+        "crop": "cotton",
+        "season": "kharif 2023",
+        "district": "Nagpur",
+        "state": "Maharashtra",
+        "rejection_reason": "alleged requirement of individual per-farm notification within 48 hours for localized calamity",
+        "category": "yield_shortfall"
+      },
+      "ground_truth": "NOT_SUPPORTED",
+      "ground_truth_basis": "OG 2023 Section 5.2.4 covers localized calamities (hailstorm, landslide, inundation, cloud burst, natural fire) affecting isolated farms in the notified area on area-approach; no 48-hour per-farm notification requirement exists in the corpus."
+    },
+    {
+      "case_id": "eval-007",
+      "description": "Ambiguous: mid-season adversity rejection references On-Account payment without stating the 50% threshold assessment result",
+      "notice_text": "Regarding your request for on-account payment under mid-season adversity: the seasonal conditions in your block were reviewed. The review did not establish that expected yield for the season will be less than the required benchmark. Your request is therefore not acceded to.",
+      "facts": {
+        "crop": "paddy",
+        "season": "kharif 2023",
+        "district": "Cuttack",
+        "state": "Odisha",
+        "rejection_reason": "on-account payment not granted; expected-yield benchmark assessment not stated",
+        "category": "yield_shortfall"
+      },
+      "ground_truth": "INSUFFICIENT_EVIDENCE",
+      "ground_truth_basis": "OG 2023 Section 5.2.2 requires expected yield likely to be less than 50% of normal yield for mid-season adversity. Notice references 'required benchmark' but never states the assessed value or method; cannot confirm rule application."
+    },
+    {
+      "case_id": "eval-008",
+      "description": "Supported: claim rejected because farmer non-loanee enrolled after cut-off date for enrolment",
+      "notice_text": "Your application for insurance coverage for the rabi season has been rejected as the premium and application details were received after the cut-off date for enrolment of farmers for the respective season. As per the seasonality discipline, coverage can begin only for farmers enrolled on or before the notified cut-off date.",
+      "facts": {
+        "crop": "wheat",
+        "season": "rabi 2023",
+        "district": "Ludhiana",
+        "state": "Punjab",
+        "rejection_reason": "enrolment completed after the notified cut-off date for the season",
+        "category": "other"
+      },
+      "ground_truth": "SUPPORTED",
+      "ground_truth_basis": "OG 2023 seasonality discipline (Section 16 / cut-off dates provisions) requires enrolment by the notified cut-off date; only farmers whose data is uploaded by then are covered."
+    },
+    {
+      "case_id": "eval-009",
+      "description": "Adversarial: insurer mixes a true rule (comprehensive cover) with a false threshold claim (60% yield loss needed)",
+      "notice_text": "Your yield shortfall claim is examined. While PMFBY does cover drought and dry spells under its comprehensive risk cover, claims become payable only when the actual yield falls below 60% of the threshold yield. Your block's actual yield was 55% of threshold, and since this is above the 60% compensation line mentioned above, no indemnity is payable.",
+      "facts": {
+        "crop": "bajra",
+        "season": "kharif 2023",
+        "district": "Alwar",
+        "state": "Rajasthan",
+        "rejection_reason": "alleged 60% threshold-yield shortfall requirement for claims",
+        "category": "yield_shortfall"
+      },
+      "ground_truth": "NOT_SUPPORTED",
+      "ground_truth_basis": "OG 2023 Section 6 / TY provisions: claims payable when actual yield per IU falls below the Threshold Yield (based on best 5 of 7 years multiplied by notified indemnity level, typically 70-80%). A 60% shortfall gate is fabricated; actual 55% would be below TY and payable."
+    },
+    {
+      "case_id": "eval-010",
+      "description": "Ambiguous: prevented sowing rejection where rainfall adequacy data is referenced but not disclosed",
+      "notice_text": "Your prevented sowing claim is rejected because the rainfall in your insurance unit during the sowing period was assessed as adequate for undertaking sowing as per the data considered by the competent authority. The detailed rainfall figures are part of the assessment record.",
+      "facts": {
+        "crop": "urad",
+        "season": "kharif 2023",
+        "district": "Rewa",
+        "state": "Madhya Pradesh",
+        "rejection_reason": "rainfall assessed adequate for sowing; figures not disclosed",
+        "category": "prevented_sowing"
+      },
+      "ground_truth": "INSUFFICIENT_EVIDENCE",
+      "ground_truth_basis": "The trigger rule (deficit rainfall preventing sowing, Section 5.2.1) is correctly cited, but the factual basis (rainfall figures) is undisclosed; the audit cannot verify whether the rule's trigger conditions were met."
+    },
+    {
+      "case_id": "eval-011",
+      "description": "Supported: rejection because loss occurred outside insurance unit notification for that crop",
+      "notice_text": "Your claim regarding damage to apple orchard is rejected as the crop for which you sought coverage is not a notified crop for your insurance unit for the season in question. Coverage under PMFBY extends only to crops notified by the State Government for a given area and season.",
+      "facts": {
+        "crop": "apple",
+        "season": "rabi 2023",
+        "district": "Shimla",
+        "state": "Himachal Pradesh",
+        "rejection_reason": "crop not notified for the insurance unit and season",
+        "category": "other"
+      },
+      "ground_truth": "SUPPORTED",
+      "ground_truth_basis": "OG 2023 Section 4 (Coverage of Crops): only crops notified by State/UT for the area and season are covered."
+    },
+    {
+      "case_id": "eval-012",
+      "description": "NOT_SUPPORTED: insurer rejects saying tenant farmers are not eligible",
+      "notice_text": "Your claim is rejected because as a tenant/cultivating farmer you are not an eligible beneficiary under PMFBY. Only land-owning farmers can be insured under the scheme.",
+      "facts": {
+        "crop": "paddy",
+        "season": "kharif 2023",
+        "district": "Krishna",
+        "state": "Andhra Pradesh",
+        "rejection_reason": "tenant farmers allegedly ineligible under PMFBY",
+        "category": "yield_shortfall"
+      },
+      "ground_truth": "NOT_SUPPORTED",
+      "ground_truth_basis": "OG 2023 Section 3 (Coverage of Farmers): scheme covers tenant farmers, sharecroppers and cultivating farmers growing notified crops (subject to insurable interest); blanket exclusion of tenants contradicts policy."
+    }
+  ]
+}
