@@ -2,10 +2,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from davacheck.agents.extraction import extract_facts
+from davacheck.agents.grievance import GrievanceDraft, approve_draft
 from davacheck.agents.ocr import ocr_image
-from davacheck.pipeline import run_audit
+from davacheck.agents.scope import ScopeDecision, answer_followup, check_scope
+from davacheck.graph import build_graph
 from davacheck.retrieval import get_index
-from davacheck.schemas import CaseFacts
+from davacheck.schemas import AuditResult, CaseFacts
 from davacheck.store import create_case, get_case
 
 app = FastAPI(title="DavaCheck", version="0.1.0")
@@ -53,9 +55,53 @@ def create_case(notice_text: str) -> CaseFacts:
 
 
 @app.post("/audit")
-def audit_case(case_id: str) -> dict:
+def audit_case(case_id: str, language: str = "en") -> dict:
     case = get_case(case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="case not found")
-    result, events = run_audit(case["facts"], case["notice_text"])
-    return {"result": result.model_dump(), "audit_events": [e.model_dump() for e in events]}
+    graph = build_graph()
+    state = graph.invoke({"notice_text": case["notice_text"], "language": language})
+    result: AuditResult = state["result"]
+    events: list = state.get("events", [])
+    case["result"] = result
+    return {"result": result.model_dump(), "audit_events": [e.model_dump() for e in events],
+            "grievance_draft": state.get("grievance_draft")}
+
+
+class GrievanceApproval(BaseModel):
+    case_id: str
+
+
+@app.post("/grievance/approve")
+def approve_grievance(req: GrievanceApproval) -> dict:
+    case = get_case(req.case_id)
+    if case is None or case.get("grievance_draft") is None:
+        raise HTTPException(status_code=404, detail="no grievance draft for case")
+    approved = approve_draft(GrievanceDraft.model_validate(case["grievance_draft"]))
+    case["grievance_draft"] = approved.model_dump()
+    return {"grievance_draft": approved.model_dump()}
+
+
+class FollowUpRequest(BaseModel):
+    case_id: str
+    turn: str = Field(min_length=2)
+
+
+@app.post("/case/followup")
+def followup(req: FollowUpRequest) -> dict:
+    case = get_case(req.case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="case not found")
+    scope = check_scope(req.turn)
+    if scope.decision == ScopeDecision.OUT_OF_SCOPE:
+        return {"decision": "declined", "reason": scope.reason, "answer": None}
+    if scope.decision == ScopeDecision.CLARIFY:
+        return {"decision": "clarify", "reason": scope.reason, "answer": None}
+    result = case.get("result")
+    answer = answer_followup(
+        req.turn, case["facts"],
+        result.verdict.value if result else "(no audit yet)",
+        result.explanation if result else "(no audit yet)",
+        result.citations if result else [],
+    )
+    return {"decision": "answered", "reason": scope.reason, "answer": answer.answer}
