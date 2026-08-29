@@ -3,9 +3,10 @@ from pydantic import BaseModel, Field
 
 from davacheck.agents.extraction import extract_facts
 from davacheck.agents.ocr import ocr_image
+from davacheck.pipeline import run_audit
 from davacheck.retrieval import get_index
-from davacheck.schemas import AuditResult, CaseFacts
-from davacheck.store import create_case
+from davacheck.schemas import CaseFacts
+from davacheck.store import create_case, get_case
 
 app = FastAPI(title="DavaCheck", version="0.1.0")
 
@@ -51,6 +52,10 @@ def create_case(notice_text: str) -> CaseFacts:
     raise NotImplementedError
 
 
-@app.post("/audit", response_model=AuditResult)
-def audit_case(case_id: str) -> AuditResult:
-    raise NotImplementedError
+@app.post("/audit")
+def audit_case(case_id: str) -> dict:
+    case = get_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="case not found")
+    result, events = run_audit(case["facts"], case["notice_text"])
+    return {"result": result.model_dump(), "audit_events": [e.model_dump() for e in events]}
