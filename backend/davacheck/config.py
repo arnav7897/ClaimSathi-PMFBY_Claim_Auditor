@@ -4,10 +4,10 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-
+PROJECT_ROOT = BACKEND_ROOT.parent
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(PROJECT_ROOT / ".env"), extra="ignore")
 
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
