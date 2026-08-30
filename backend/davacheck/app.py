@@ -1,4 +1,5 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from davacheck.agents.extraction import extract_facts
@@ -12,6 +13,13 @@ from davacheck.store import create_case, get_case
 
 app = FastAPI(title="DavaCheck", version="0.1.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class RetrieveRequest(BaseModel):
     query: str
@@ -49,10 +57,6 @@ def create_case_endpoint(req: CaseRequest) -> dict:
     return {"case_id": case_id, "facts": facts.model_dump()}
 
 
-@app.post("/case", response_model=CaseFacts)
-def create_case(notice_text: str) -> CaseFacts:
-    raise NotImplementedError
-
 
 @app.post("/audit")
 def audit_case(case_id: str, language: str = "en") -> dict:
@@ -64,6 +68,8 @@ def audit_case(case_id: str, language: str = "en") -> dict:
     result: AuditResult = state["result"]
     events: list = state.get("events", [])
     case["result"] = result
+    if "grievance_draft" in state:
+        case["grievance_draft"] = state["grievance_draft"]
     return {"result": result.model_dump(), "audit_events": [e.model_dump() for e in events],
             "grievance_draft": state.get("grievance_draft")}
 
