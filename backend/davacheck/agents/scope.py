@@ -62,7 +62,14 @@ class FollowUpAnswer(BaseModel):
     answer: str
 
 
-def answer_followup(turn: str, facts: CaseFacts, verdict: str, explanation: str, evidence: list) -> FollowUpAnswer:
+def answer_followup(
+    turn: str,
+    facts: CaseFacts,
+    verdict: str,
+    explanation: str,
+    evidence: list,
+    language: str = "en",
+) -> FollowUpAnswer:
     evidence_block = "\n\n".join(
         f"[{c.chunk_id}] ({c.section}) {c.quote}" for c in evidence
     ) if evidence and hasattr(evidence[0], "chunk_id") else "\n\n".join(
@@ -75,4 +82,9 @@ def answer_followup(turn: str, facts: CaseFacts, verdict: str, explanation: str,
         .replace("{{EVIDENCE}}", evidence_block or "(none)")
         .replace("{{TURN}}", turn)
     )
-    return get_llm().generate_structured(prompt, FollowUpAnswer)
+    answer = get_llm().generate_structured(prompt, FollowUpAnswer)
+    if language == "hi":
+        from davacheck.agents.localization import localize
+
+        answer.answer = localize(answer.answer, "hi")
+    return answer

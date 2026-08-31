@@ -108,6 +108,7 @@ def approve_grievance(req: GrievanceApproval) -> dict:
 class FollowUpRequest(BaseModel):
     case_id: str
     turn: str = Field(min_length=2)
+    language: str = Field(default="en")
 
 
 @app.post("/case/followup")
@@ -126,5 +127,6 @@ def followup(req: FollowUpRequest) -> dict:
         result.verdict.value if result else "(no audit yet)",
         result.explanation if result else "(no audit yet)",
         result.citations if result else [],
+        language=req.language,
     )
     return {"decision": "answered", "reason": scope.reason, "answer": answer.answer}

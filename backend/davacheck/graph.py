@@ -213,6 +213,39 @@ def claim_finalize_node(state: GraphState) -> GraphState:
     }
 
 
+def claim_localization_node(state: GraphState) -> GraphState:
+    """Localize claim-assessment output after finalization."""
+    lang = state.get("language", "en")
+    if lang == "en":
+        return {}
+
+    result: AuditResult = state["result"]
+    translated_claims: list[MaterialClaim] = []
+    for claim in result.material_claims:
+        translated_claims.append(
+            MaterialClaim(
+                claim=localize(claim.claim, lang),
+                citation_refs=claim.citation_refs,
+                reasoning=localize(claim.reasoning, lang),
+            )
+        )
+
+    return {
+        "result": result.model_copy(
+            update={
+                "explanation": localize(result.explanation, lang),
+                "material_claims": translated_claims,
+            }
+        ),
+        "events": [
+            AuditEvent(
+                stage="claim_localization",
+                detail=f"localized result to {lang}",
+            )
+        ],
+    }
+
+
 # ─── Routing ─────────────────────────────────────────────────────────────────
 
 def route_node(state: GraphState) -> str:
@@ -237,6 +270,7 @@ def build_graph():
     graph.add_node("claim_retrieval", claim_retrieval_node)
     graph.add_node("claim_assessment", claim_assessment_node)
     graph.add_node("claim_finalize", claim_finalize_node)
+    graph.add_node("claim_localization", claim_localization_node)
 
     graph.set_entry_point("intake")
     graph.add_conditional_edges(
@@ -258,6 +292,7 @@ def build_graph():
     # Claim-application path
     graph.add_edge("claim_retrieval", "claim_assessment")
     graph.add_edge("claim_assessment", "claim_finalize")
-    graph.add_edge("claim_finalize", END)
+    graph.add_edge("claim_finalize", "claim_localization")
+    graph.add_edge("claim_localization", END)
 
     return graph.compile()

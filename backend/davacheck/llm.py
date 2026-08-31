@@ -10,6 +10,9 @@ from davacheck.config import settings
 logger = logging.getLogger("davacheck.llm")
 
 T = TypeVar("T", bound=BaseModel)
+LEGACY_MODEL_ALIASES = {
+    "gemini-2.5-flash": "gemini-3.6-flash",
+}
 
 
 class LLMError(Exception):
@@ -23,7 +26,9 @@ class GeminiClient:
         from google import genai
 
         self._client = genai.Client(api_key=settings.gemini_api_key)
-        self.model = settings.gemini_model
+        self.model = LEGACY_MODEL_ALIASES.get(settings.gemini_model, settings.gemini_model)
+        if self.model != settings.gemini_model:
+            logger.warning("mapped_legacy_model from=%s to=%s", settings.gemini_model, self.model)
 
     def generate_structured(self, prompt: str, schema: Type[T]) -> T:
         response = self._client.models.generate_content(
