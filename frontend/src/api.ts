@@ -3,10 +3,19 @@ const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 export type Verdict = "SUPPORTED" | "NOT_SUPPORTED" | "INSUFFICIENT_EVIDENCE";
 
 export interface CaseFacts {
+  farmer_name: string | null;
+  application_number: string | null;
+  policy_number: string | null;
   crop: string | null;
   season: string | null;
   district: string | null;
   state: string | null;
+  tehsil: string | null;
+  village: string | null;
+  incident_date: string | null;
+  cause_of_loss: string | null;
+  affected_area: string | null;
+  loss_percent: number | null;
   rejection_reason: string | null;
   cited_clause: string | null;
   category: string;
@@ -98,10 +107,10 @@ export async function approveGrievance(caseId: string): Promise<{ grievance_draf
   return post("/grievance/approve", { case_id: caseId });
 }
 
-export async function followUp(caseId: string, turn: string): Promise<{
+export async function followUp(caseId: string, turn: string, language: string = "en"): Promise<{
   decision: string;
   reason: string;
   answer: string | null;
 }> {
-  return post("/case/followup", { case_id: caseId, turn });
+  return post("/case/followup", { case_id: caseId, turn, language });
 }

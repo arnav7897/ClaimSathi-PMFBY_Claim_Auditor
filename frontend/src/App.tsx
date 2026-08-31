@@ -1,14 +1,35 @@
-import { motion, AnimatePresence } from "framer-motion"
-import { useState } from "react"
+import { AnimatePresence, motion } from "framer-motion"
 import {
-  createCase,
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  FileText,
+  Languages,
+  LoaderCircle,
+  MessageSquareMore,
+  PanelLeft,
+  RefreshCcw,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Upload,
+  type LucideIcon,
+} from "lucide-react"
+import { useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
+import {
   assessClaim,
+  createCase,
+  followUp,
   ocrImage,
+  type AuditResult,
   type CaseFacts,
 } from "./api"
 
 type Screen = "form" | "extracting" | "results"
 type InputMode = "form" | "text" | "image"
+type Language = "en" | "hi"
 
 type IncidentFormData = {
   farmer_name: string
@@ -27,14 +48,13 @@ type IncidentFormData = {
   description?: string
 }
 
-const INCIDENT_CROP_OPTIONS = [
-  "Sugarcane",
-  "Paddy",
-  "Wheat",
-  "Maize",
-  "Soybean",
-  "Other",
-]
+type FollowUpResult = {
+  decision: string
+  reason: string
+  answer: string | null
+}
+
+const INCIDENT_CROP_OPTIONS = ["Sugarcane", "Paddy", "Wheat", "Maize", "Soybean", "Other"]
 
 const INCIDENT_CAUSE_OPTIONS = [
   "Heavy rainfall",
@@ -124,20 +144,184 @@ const initialFormData: IncidentFormData = {
   loss_percent: "",
 }
 
-export default function IncidentReport() {
+const INPUT_MODES: Array<{ key: InputMode; label: string; detail: string }> = [
+  {
+    key: "form",
+    label: "Structured intake",
+    detail: "Enter the essentials in a clean, guided form.",
+  },
+  {
+    key: "text",
+    label: "Paste notice text",
+    detail: "Drop in the full rejection note or claim summary.",
+  },
+  {
+    key: "image",
+    label: "Upload a photo",
+    detail: "OCR the notice and send it through the same review flow.",
+  },
+]
+
+const LANGUAGE_OPTIONS: Array<{ key: Language; label: string; helper: string }> = [
+  {
+    key: "en",
+    label: "English",
+    helper: "Assessments, citations, and follow-up replies stay in English.",
+  },
+  {
+    key: "hi",
+    label: "Hindi",
+    helper: "Assessments, citations, and follow-up replies are returned in Hindi.",
+  },
+]
+
+const WORKFLOW_STEPS = [
+  {
+    id: "form",
+    label: "Intake",
+    detail: "Collect the claim notice in form, text, or image form.",
+  },
+  {
+    id: "extracting",
+    label: "Analysis",
+    detail: "Extract facts, verify evidence, and produce the claim view.",
+  },
+  {
+    id: "results",
+    label: "Review",
+    detail: "Switch languages, ask follow-up questions, and inspect citations.",
+  },
+]
+
+const QUICK_QUESTIONS: Record<Language, string[]> = {
+  en: [
+    "Which policy clause supports this decision?",
+    "What is the strongest evidence in this case?",
+    "Summarize the claim in two sentences.",
+  ],
+  hi: [
+    "इस निर्णय को कौन सा प्रावधान समर्थन देता है?",
+    "इस मामले का सबसे मजबूत साक्ष्य क्या है?",
+    "दावे का सार दो वाक्यों में बताइए।",
+  ],
+}
+
+const panelClass =
+  "rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)]"
+const softPanelClass = "rounded-[22px] border border-slate-200 bg-[#fbfaf7]"
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Not extracted"
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function verdictMeta(verdict: string) {
+  switch (verdict) {
+    case "SUPPORTED":
+      return {
+        label: "Supported",
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        icon: CheckCircle2,
+      }
+    case "NOT_SUPPORTED":
+      return {
+        label: "Not supported",
+        tone: "border-rose-200 bg-rose-50 text-rose-800",
+        icon: ShieldCheck,
+      }
+    case "INSUFFICIENT_EVIDENCE":
+      return {
+        label: "Needs more evidence",
+        tone: "border-amber-200 bg-amber-50 text-amber-900",
+        icon: Clock3,
+      }
+    default:
+      return {
+        label: verdict,
+        tone: "border-slate-200 bg-slate-50 text-slate-700",
+        icon: ShieldCheck,
+      }
+  }
+}
+
+function sectionLabel(screen: Screen) {
+  if (screen === "form") return "Ready for intake"
+  if (screen === "extracting") return "Processing case"
+  return "Review workspace"
+}
+
+function StatusPill({
+  icon: Icon,
+  label,
+  tone,
+}: {
+  icon: LucideIcon
+  label: string
+  tone: string
+}) {
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${tone}`}>
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </span>
+  )
+}
+
+function LabeledField({
+  label,
+  error,
+  children,
+}: {
+  label: string
+  error?: string
+  children: ReactNode
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
+      {children}
+      {error ? <p className="mt-1.5 text-xs text-rose-600">{error}</p> : null}
+    </label>
+  )
+}
+
+function FieldShell({
+  children,
+}: {
+  children: ReactNode
+}) {
+  return (
+    <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus-within:border-slate-400 focus-within:ring-4 focus-within:ring-slate-200">
+      {children}
+    </div>
+  )
+}
+
+export default function DavaCheckWorkspace() {
   const [screen, setScreen] = useState<Screen>("form")
   const [inputMode, setInputMode] = useState<InputMode>("form")
+  const [analysisLanguage, setAnalysisLanguage] = useState<Language>("en")
   const [formData, setFormData] = useState<IncidentFormData>(initialFormData)
   const [pastedText, setPastedText] = useState("")
   const [errors, setErrors] = useState<Partial<Record<keyof IncidentFormData, string>>>({})
   const [caseId, setCaseId] = useState<string | null>(null)
   const [facts, setFacts] = useState<CaseFacts | null>(null)
-  const [audit, setAudit] = useState<any>(null)
-  const [events, setEvents] = useState<any[]>([])
+  const [audit, setAudit] = useState<AuditResult | null>(null)
+  const [events, setEvents] = useState<{ stage: string; detail: string }[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
+  const [followUpQuestion, setFollowUpQuestion] = useState("")
+  const [followUpResult, setFollowUpResult] = useState<FollowUpResult | null>(null)
+  const [followUpError, setFollowUpError] = useState<string | null>(null)
+  const [isFollowUpLoading, setIsFollowUpLoading] = useState(false)
 
-  const validateForm = (): boolean => {
+  const validateForm = () => {
     const newErrors: Partial<Record<keyof IncidentFormData, string>> = {}
     if (!formData.farmer_name.trim()) newErrors.farmer_name = "Farmer name is required"
     if (!formData.crop) newErrors.crop = "Crop is required"
@@ -148,12 +332,11 @@ export default function IncidentReport() {
     if (!formData.affected_area.trim()) newErrors.affected_area = "Affected area is required"
     if (!formData.loss_percent.trim()) {
       newErrors.loss_percent = "Loss percentage is required"
-    } else if (
-      isNaN(parseFloat(formData.loss_percent)) ||
-      parseFloat(formData.loss_percent) < 0 ||
-      parseFloat(formData.loss_percent) > 100
-    ) {
-      newErrors.loss_percent = "Loss percentage must be between 0 and 100"
+    } else {
+      const parsed = Number.parseFloat(formData.loss_percent)
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+        newErrors.loss_percent = "Loss percentage must be between 0 and 100"
+      }
     }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -166,23 +349,7 @@ export default function IncidentReport() {
     }
   }
 
-  // Format a JS date input value (YYYY-MM-DD) for display in
-  // the verified-text view, e.g. "18 August 2026"
-  const formatDateForDisplay = (isoDate: string): string => {
-    if (!isoDate) return ""
-    try {
-      const d = new Date(isoDate)
-      return d.toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    } catch {
-      return isoDate
-    }
-  }
-
-  const buildNoticeText = (data: IncidentFormData): string => {
+  const buildNoticeText = (data: IncidentFormData) => {
     const lines = [
       "Crop Insurance Incident Report",
       "",
@@ -192,91 +359,24 @@ export default function IncidentReport() {
       `District: ${data.district}`,
       `State: ${data.state}`,
       "",
-      `Date of Incident: ${formatDateForDisplay(data.incident_date)}`,
+      `Date of Incident: ${formatDate(data.incident_date)}`,
       `Cause of Loss: ${data.cause_of_loss}`,
       `Affected Area: ${data.affected_area} hectares`,
       `Estimated Crop Loss: ${data.loss_percent}%`,
     ]
+
     if (data.policy_number) lines.push("", `Policy Number: ${data.policy_number}`)
     if (data.application_number) lines.push(`Application Number: ${data.application_number}`)
     if (data.tehsil) lines.push(`Tehsil: ${data.tehsil}`)
     if (data.village) lines.push(`Village: ${data.village}`)
     if (data.description) lines.push("", "Description:", data.description)
+
     return lines.join("\n")
-  }
-
-  const runAssessment = async (noticeText: string, mode: InputMode) => {
-    setIsSubmitting(true)
-    setScreen("extracting")
-    try {
-      // createCase → extract_facts, which detects doc_type automatically
-      const response = await createCase(noticeText)
-      setCaseId(response.case_id)
-      setFacts(response.facts)
-
-      const auditResult = await assessClaim(response.case_id, "en")
-      setAudit(auditResult.result)
-      setEvents(auditResult.audit_events)
-      setScreen("results")
-    } catch (err) {
-      console.error(err)
-      alert(
-        `Failed to ${mode === "image" ? "OCR + assess" : "assess"} the incident report.\n\n` +
-          String(err)
-      )
-      setScreen("form")
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  // ─── Form-mode submit ────────────────────────────────────────────────────
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!validateForm()) return
-    await runAssessment(buildNoticeText(formData), "form")
-  }
-
-  // ─── Text-mode submit ────────────────────────────────────────────────────
-  const handleTextSubmit = async () => {
-    if (pastedText.trim().length < 20) {
-      alert("Please paste the full incident report text (at least 20 characters).")
-      return
-    }
-    await runAssessment(pastedText, "text")
-  }
-
-  // ─── Image-mode submit ───────────────────────────────────────────────────
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploadedFileName(file.name)
-    setIsSubmitting(true)
-    setScreen("extracting")
-    try {
-      // 1. OCR the image → extracted text
-      const ocr = await ocrImage(file)
-      // 2. Create a case from the extracted text → auto-extracts facts
-      const response = await createCase(ocr.extracted_text)
-      setCaseId(response.case_id)
-      setFacts(response.facts)
-
-      // 3. Run the claim assessment
-      const auditResult = await assessClaim(response.case_id, "en")
-      setAudit(auditResult.result)
-      setEvents(auditResult.audit_events)
-      setScreen("results")
-    } catch (err) {
-      console.error(err)
-      alert("Image upload / OCR failed.\n\n" + String(err))
-      setScreen("form")
-    } finally {
-      setIsSubmitting(false)
-    }
   }
 
   const resetAll = () => {
     setScreen("form")
+    setInputMode("form")
     setFormData(initialFormData)
     setPastedText("")
     setUploadedFileName(null)
@@ -285,586 +385,1111 @@ export default function IncidentReport() {
     setAudit(null)
     setEvents([])
     setErrors({})
+    setAnalysisLanguage("en")
+    setFollowUpQuestion("")
+    setFollowUpResult(null)
+    setFollowUpError(null)
+    setIsFollowUpLoading(false)
   }
 
-  const getVerdictStyle = (verdict: string) => {
-    const base = "inline-block border-2 px-3 py-1 font-mono text-sm font-bold"
-    switch (verdict) {
-      case "SUPPORTED":
-        return `${base} bg-approved text-white border-ink`
-      case "NOT_SUPPORTED":
-        return `${base} bg-danger text-white border-ink`
-      case "INSUFFICIENT_EVIDENCE":
-        return `${base} bg-navy text-white border-ink`
-      default:
-        return `${base} bg-white text-ink border-ink`
+  const assessExistingCase = async (id: string, language: Language) => {
+    const auditResult = await assessClaim(id, language)
+    setAudit(auditResult.result)
+    setEvents(auditResult.audit_events)
+    setAnalysisLanguage(language)
+    setScreen("results")
+  }
+
+  const runAssessment = async (noticeText: string) => {
+    setIsSubmitting(true)
+    setScreen("extracting")
+    setFollowUpResult(null)
+    setFollowUpError(null)
+    try {
+      const response = await createCase(noticeText)
+      setCaseId(response.case_id)
+      setFacts(response.facts)
+      await assessExistingCase(response.case_id, analysisLanguage)
+    } catch (err) {
+      console.error(err)
+      alert(`Failed to review the case.\n\n${String(err)}`)
+      setScreen("form")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  // ────────────────────────────────────────────────────────────────────────
-  // Render
-  // ────────────────────────────────────────────────────────────────────────
+  const rerunInLanguage = async (language: Language) => {
+    if (!caseId) return
+    setIsSubmitting(true)
+    setScreen("extracting")
+    setFollowUpResult(null)
+    setFollowUpError(null)
+    try {
+      await assessExistingCase(caseId, language)
+    } catch (err) {
+      console.error(err)
+      alert(`Failed to switch language.\n\n${String(err)}`)
+      setScreen("results")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleLanguageChange = (next: Language) => {
+    if (next === analysisLanguage) return
+    if (screen === "results" && caseId) {
+      void rerunInLanguage(next)
+      return
+    }
+    setAnalysisLanguage(next)
+  }
+
+  const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!validateForm()) return
+    await runAssessment(buildNoticeText(formData))
+  }
+
+  const handleTextSubmit = async () => {
+    if (pastedText.trim().length < 20) {
+      alert("Please paste the full incident report text.")
+      return
+    }
+    await runAssessment(pastedText)
+  }
+
+  const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadedFileName(file.name)
+    setIsSubmitting(true)
+    setScreen("extracting")
+    setFollowUpResult(null)
+    setFollowUpError(null)
+
+    try {
+      const ocr = await ocrImage(file)
+      const response = await createCase(ocr.extracted_text)
+      setCaseId(response.case_id)
+      setFacts(response.facts)
+      await assessExistingCase(response.case_id, analysisLanguage)
+    } catch (err) {
+      console.error(err)
+      alert(`OCR or review failed.\n\n${String(err)}`)
+      setScreen("form")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleFollowUp = async () => {
+    if (!caseId || !followUpQuestion.trim()) {
+      setFollowUpError("Ask a question about the current case first.")
+      return
+    }
+
+    setIsFollowUpLoading(true)
+    setFollowUpError(null)
+
+    try {
+      const response = await followUp(caseId, followUpQuestion.trim(), analysisLanguage)
+      setFollowUpResult(response)
+    } catch (err) {
+      console.error(err)
+      setFollowUpError(String(err))
+    } finally {
+      setIsFollowUpLoading(false)
+    }
+  }
+
+  const verdict = audit ? verdictMeta(audit.verdict) : null
+  const workflowTone = sectionLabel(screen)
+  const languageName = analysisLanguage === "hi" ? "Hindi" : "English"
+  const currentQuickQuestions = QUICK_QUESTIONS[analysisLanguage]
+
+  const factRows: Array<{ label: string; value: string }> = [
+    { label: "Farmer", value: facts?.farmer_name ?? "Not extracted" },
+    { label: "Crop", value: facts?.crop ?? "Not extracted" },
+    { label: "Season", value: facts?.season ?? "Not extracted" },
+    { label: "District", value: facts?.district ?? "Not extracted" },
+    { label: "State", value: facts?.state ?? "Not extracted" },
+    { label: "Tehsil", value: facts?.tehsil ?? "Not extracted" },
+    { label: "Village", value: facts?.village ?? "Not extracted" },
+    { label: "Cause", value: facts?.cause_of_loss ?? "Not extracted" },
+    { label: "Date", value: formatDate(facts?.incident_date) },
+    {
+      label: "Area",
+      value: facts?.affected_area ? `${facts.affected_area} hectares` : "Not extracted",
+    },
+    {
+      label: "Loss",
+      value: facts?.loss_percent == null ? "Not extracted" : `${facts.loss_percent}%`,
+    },
+    { label: "Category", value: facts?.category ?? "Not extracted" },
+  ]
+
   return (
-    <main className="min-h-screen bg-canvas font-sans text-ink">
-      <header className="border-b-2 border-ink bg-white px-6 py-4">
-        <h1 className="text-2xl font-bold tracking-tight text-navy">DavaCheck</h1>
-        <p className="text-sm text-ink/70">
-          PMFBY claim-rejection auditor — evidence-grounded, fail-closed
-        </p>
-      </header>
-
-      <div className="mx-auto max-w-4xl p-6">
-        <AnimatePresence mode="wait">
-          {screen === "form" && (
-            <motion.section
-              key="form"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="border-2 border-ink bg-white"
-            >
-              <div className="border-b-2 border-ink bg-navy px-4 py-2 font-mono text-sm font-bold text-white">
-                STEP 1 — INCIDENT REPORT
+    <div className="min-h-screen text-slate-900">
+      <div className="mx-auto grid min-h-screen max-w-[1600px] gap-6 px-4 py-4 lg:px-6 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
+        <aside className="order-2 flex flex-col gap-6 xl:order-1">
+          <section className={`${panelClass} p-5`}>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                <ShieldCheck className="h-6 w-6" />
               </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  DavaCheck
+                </p>
+                <h1 className="text-lg font-semibold tracking-tight">Claim workspace</h1>
+              </div>
+            </div>
 
-              {/* Tabs */}
-              <div className="flex border-b-2 border-ink">
-                {(
-                  [
-                    { key: "form", label: "FILL FORM" },
-                    { key: "text", label: "PASTE TEXT" },
-                    { key: "image", label: "UPLOAD PHOTO" },
-                  ] as { key: InputMode; label: string }[]
-                ).map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setInputMode(tab.key)}
-                    className={`flex-1 border-r-2 border-ink px-4 py-2 font-mono text-sm font-bold last:border-r-0 ${
-                      inputMode === tab.key
-                        ? "bg-ink text-white"
-                        : "bg-white text-ink hover:bg-canvas"
+            <p className="mt-4 text-sm leading-6 text-slate-600">
+              A focused PMFBY review desk for intake teams. Structured entry, OCR, bilingual output, and
+              case-scoped follow-up in one place.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              <StatusPill icon={PanelLeft} label={workflowTone} tone="border-slate-200 bg-slate-50 text-slate-700" />
+              <StatusPill icon={Languages} label={languageName} tone="border-emerald-200 bg-emerald-50 text-emerald-800" />
+            </div>
+          </section>
+
+          <section className={`${panelClass} p-5`}>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-emerald-700" />
+              <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-600">
+                Workflow
+              </h2>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {WORKFLOW_STEPS.map((step) => {
+                const active = step.id === screen
+                const completed =
+                  (screen === "extracting" && step.id === "form") ||
+                  (screen === "results" && (step.id === "form" || step.id === "extracting"))
+                return (
+                  <div
+                    key={step.id}
+                    className={`rounded-2xl border p-4 transition ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : completed
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-slate-200 bg-[#fbfaf7]"
                     }`}
                   >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="p-6">
-                <p className="mb-4 text-sm text-ink/70">
-                  Report crop damage under PMFBY. Choose how you want to provide
-                  the incident details — fill the form, paste a text report, or
-                  upload a photo of the paper form.
-                </p>
-
-                {/* ─────── Form tab ─────── */}
-                {inputMode === "form" && (
-                  <form onSubmit={handleFormSubmit} className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Farmer Name *
-                          <input
-                            type="text"
-                            value={formData.farmer_name}
-                            onChange={(e) =>
-                              handleInputChange("farmer_name", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="Ramesh Kumar"
-                          />
-                        </label>
-                        {errors.farmer_name && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.farmer_name}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Crop *
-                          <select
-                            value={formData.crop}
-                            onChange={(e) =>
-                              handleInputChange("crop", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                          >
-                            <option value="">Select crop...</option>
-                            {INCIDENT_CROP_OPTIONS.map((crop) => (
-                              <option key={crop} value={crop}>
-                                {crop}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {errors.crop && (
-                          <p className="mt-1 text-xs text-danger">{errors.crop}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Season *
-                          <input
-                            type="text"
-                            value={formData.season}
-                            onChange={(e) =>
-                              handleInputChange("season", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="Kharif 2026"
-                          />
-                        </label>
-                        {errors.season && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.season}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          District *
-                          <select
-                            value={formData.district}
-                            onChange={(e) =>
-                              handleInputChange("district", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                          >
-                            <option value="">Select district...</option>
-                            {KARNATAKA_DISTRICTS.map((district) => (
-                              <option key={district} value={district}>
-                                {district}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {errors.district && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.district}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Incident Date *
-                          <input
-                            type="date"
-                            value={formData.incident_date}
-                            onChange={(e) =>
-                              handleInputChange("incident_date", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                          />
-                        </label>
-                        {errors.incident_date && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.incident_date}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Cause of Loss *
-                          <select
-                            value={formData.cause_of_loss}
-                            onChange={(e) =>
-                              handleInputChange("cause_of_loss", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                          >
-                            <option value="">Select cause...</option>
-                            {INCIDENT_CAUSE_OPTIONS.map((cause) => (
-                              <option key={cause} value={cause}>
-                                {cause}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {errors.cause_of_loss && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.cause_of_loss}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Affected Area (hectares) *
-                          <input
-                            type="text"
-                            value={formData.affected_area}
-                            onChange={(e) =>
-                              handleInputChange("affected_area", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="2.5"
-                          />
-                        </label>
-                        {errors.affected_area && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.affected_area}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Estimated Crop Loss (%) *
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={formData.loss_percent}
-                            onChange={(e) =>
-                              handleInputChange("loss_percent", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="40"
-                          />
-                        </label>
-                        {errors.loss_percent && (
-                          <p className="mt-1 text-xs text-danger">
-                            {errors.loss_percent}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Policy Number
-                          <input
-                            type="text"
-                            value={formData.policy_number || ""}
-                            onChange={(e) =>
-                              handleInputChange("policy_number", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="PMFBY/123456"
-                          />
-                        </label>
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Application Number
-                          <input
-                            type="text"
-                            value={formData.application_number || ""}
-                            onChange={(e) =>
-                              handleInputChange(
-                                "application_number",
-                                e.target.value
-                              )
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="CLM/2026/001"
-                          />
-                        </label>
-                      </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold">{step.label}</p>
+                      {active ? (
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                          Now
+                        </span>
+                      ) : completed ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                      ) : (
+                        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                      )}
                     </div>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Tehsil
-                          <input
-                            type="text"
-                            value={formData.tehsil || ""}
-                            onChange={(e) =>
-                              handleInputChange("tehsil", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="Vijayapura Taluk"
-                          />
-                        </label>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-bold">
-                          Village
-                          <input
-                            type="text"
-                            value={formData.village || ""}
-                            onChange={(e) =>
-                              handleInputChange("village", e.target.value)
-                            }
-                            className="mt-1 block w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                            placeholder="Kondapura"
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-sm font-bold">
-                        Additional Description (optional)
-                        <textarea
-                          value={formData.description || ""}
-                          onChange={(e) =>
-                            handleInputChange("description", e.target.value)
-                          }
-                          className="mt-1 block h-24 w-full border-2 border-ink bg-white p-2 font-mono text-sm"
-                          placeholder="Describe the damage in your own words..."
-                        />
-                      </label>
-                    </div>
-
-                    <div className="mt-6 flex flex-wrap gap-4">
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="border-2 border-ink bg-navy px-6 py-2 font-mono font-bold text-white hover:bg-ink disabled:opacity-50"
-                      >
-                        {isSubmitting ? "SUBMITTING..." : "SUBMIT INCIDENT REPORT"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormData(SAMPLE_FORM)}
-                        className="border-2 border-ink bg-white px-4 py-2 font-mono text-sm hover:bg-canvas"
-                      >
-                        LOAD SAMPLE DATA
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {/* ─────── Text tab ─────── */}
-                {inputMode === "text" && (
-                  <div className="space-y-4">
-                    <label className="mb-1 block text-sm font-bold">
-                      Paste your incident report text below
-                      <textarea
-                        value={pastedText}
-                        onChange={(e) => setPastedText(e.target.value)}
-                        className="mt-1 block h-72 w-full border-2 border-ink bg-white p-3 font-mono text-sm"
-                        placeholder="Paste the rejection notice or claim text here..."
-                      />
-                    </label>
-                    <div className="flex flex-wrap gap-4">
-                      <button
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={handleTextSubmit}
-                        className="border-2 border-ink bg-navy px-6 py-2 font-mono font-bold text-white hover:bg-ink disabled:opacity-50"
-                      >
-                        {isSubmitting ? "ASSESSING..." : "ASSESS REPORT"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPastedText(SAMPLE_TEXT)}
-                        className="border-2 border-ink bg-white px-4 py-2 font-mono text-sm hover:bg-canvas"
-                      >
-                        LOAD SAMPLE TEXT
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPastedText("")}
-                        className="border-2 border-ink bg-white px-4 py-2 font-mono text-sm hover:bg-canvas"
-                      >
-                        CLEAR
-                      </button>
-                    </div>
-                    <p className="text-xs text-ink/60">
-                      The system will extract farmer, crop, season, district, cause of
-                      loss, affected area, and loss % automatically using the LLM
-                      extraction module.
+                    <p className={`mt-2 text-xs leading-5 ${active ? "text-white/75" : "text-slate-600"}`}>
+                      {step.detail}
                     </p>
                   </div>
-                )}
+                )
+              })}
+            </div>
+          </section>
 
-                {/* ─────── Image tab ─────── */}
-                {inputMode === "image" && (
-                  <div className="space-y-4">
-                    <label className="block border-2 border-ink bg-canvas p-6 text-center">
-                      <span className="block font-mono text-sm font-bold">
-                        Upload photo of paper incident report
-                      </span>
-                      <span className="mt-1 block text-xs text-ink/60">
-                        JPG, PNG, or PDF. Multilingual OCR — works with English or
-                        Hindi text.
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={isSubmitting}
-                        className="mt-3 block w-full font-mono text-xs"
-                      />
-                    </label>
-                    {uploadedFileName && (
-                      <div className="border-2 border-ink bg-white p-2 font-mono text-xs">
-                        UPLOADED: {uploadedFileName}
-                      </div>
-                    )}
-                    <p className="text-xs text-ink/60">
-                      The image is sent to the OCR module, then the extracted text
-                      is passed to the same extraction + claim assessment pipeline.
+          <section className={`${panelClass} p-5`}>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-600">
+              What the product does
+            </h2>
+            <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+              <li className="flex gap-3">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                Build a case from form fields, pasted text, or an image upload.
+              </li>
+              <li className="flex gap-3">
+                <Languages className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                Switch between English and Hindi without losing the current case context.
+              </li>
+              <li className="flex gap-3">
+                <MessageSquareMore className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                Ask follow-up questions after review with the same case scope.
+              </li>
+              <li className="flex gap-3">
+                <BarChart3 className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                Inspect verdicts, citations, material claims, and audit events in one view.
+              </li>
+            </ul>
+          </section>
+
+          <section className={`${panelClass} p-5`}>
+            <div className="flex items-center gap-2">
+              <RefreshCcw className="h-4 w-4 text-slate-500" />
+              <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-600">
+                Configuration
+              </h2>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Frontend API calls read from <span className="font-mono text-[13px] text-slate-900">VITE_API_BASE</span>.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              If that variable is not set, the app talks to <span className="font-mono">http://localhost:8000</span>.
+            </p>
+          </section>
+        </aside>
+
+        <main className="order-1 flex min-w-0 flex-col gap-6 xl:order-2">
+          <section className={`${panelClass} overflow-hidden`}>
+            <div className="border-b border-slate-200 px-6 py-6 sm:px-7">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-3xl">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-[#fbfaf7] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">
+                    <Sparkles className="h-3.5 w-3.5 text-emerald-700" />
+                    {workflowTone}
+                  </div>
+
+                  <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+                    Minimal claim review, built like a serious SaaS product.
+                  </h2>
+
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
+                    Use the form, paste a notice, or upload a photo. We keep the interface calm, the
+                    language switch obvious, and the follow-up loop one click away.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[410px]">
+                  <div className={softPanelClass + " p-4"}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Inputs</p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">Form, text, OCR</p>
+                  </div>
+                  <div className={softPanelClass + " p-4"}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Language
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">{languageName}</p>
+                  </div>
+                  <div className={softPanelClass + " p-4"}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Follow-up
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      Available after review
                     </p>
                   </div>
-                )}
+                </div>
               </div>
-            </motion.section>
-          )}
+            </div>
 
-          {screen === "extracting" && (
-            <motion.section
-              key="extracting"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="border-2 border-ink bg-white p-8 text-center"
-            >
-              <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-navy border-t-transparent" />
-              <h3 className="text-lg font-bold text-navy">
-                Assessing incident report...
-              </h3>
-              <p className="mt-2 text-sm text-ink/70">
-                Extracting facts, retrieving policy excerpts, and running the
-                claim assessment.
-              </p>
-            </motion.section>
-          )}
-
-          {screen === "results" && audit && (
-            <motion.section
-              key="results"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
-            >
-              <div className="border-2 border-ink bg-white p-4">
-                <div className="border-b-2 border-ink bg-navy px-4 py-2 font-mono text-sm font-bold text-white">
-                  EXTRACTED FACTS [UNVERIFIED — CHECK]
-                </div>
-                <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
-                  <div>
-                    <span className="font-bold">Farmer:</span> {facts?.farmer_name || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">Crop:</span> {facts?.crop || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">Season:</span> {facts?.season || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">District:</span> {facts?.district || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">State:</span> {facts?.state || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">Cause:</span> {facts?.cause_of_loss || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">Incident Date:</span> {facts?.incident_date || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">Affected Area:</span> {facts?.affected_area || "[MISSING]"}
-                  </div>
-                  <div>
-                    <span className="font-bold">Loss:</span> {facts?.loss_percent ?? "[MISSING]"}%
-                  </div>
-                </div>
-                {facts?.missing_fields && facts.missing_fields.length > 0 && (
-                  <div className="mt-2 border-2 border-danger p-2 font-mono text-xs text-danger">
-                    MISSING FROM REPORT: {facts.missing_fields.join(", ")}
-                  </div>
-                )}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 sm:px-7">
+              <div className="flex flex-wrap gap-2">
+                {LANGUAGE_OPTIONS.map((option) => {
+                  const active = analysisLanguage === option.key
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => handleLanguageChange(option.key)}
+                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        active
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                      title={option.helper}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Languages className="h-4 w-4" />
+                        {option.label}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
 
-              <div className="border-2 border-ink bg-white p-4">
-                <div className="border-b-2 border-ink bg-navy px-4 py-2 font-mono text-sm font-bold text-white">
-                  CLAIM ASSESSMENT
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <span className="font-bold">Verdict:</span>
-                  <span className={getVerdictStyle(audit.verdict)}>
-                    {audit.verdict}
-                  </span>
-                  <span className="text-sm text-ink/70">
-                    Confidence: {audit.confidence_flag}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm leading-relaxed">{audit.explanation}</p>
-              </div>
-
-              {audit.material_claims && audit.material_claims.length > 0 && (
-                <div className="border-2 border-ink bg-white">
-                  <div className="border-b-2 border-ink bg-navy px-4 py-2 font-mono text-sm font-bold text-white">
-                    MATERIAL CLAIMS
-                  </div>
-                  <ul className="divide-y-2 divide-ink/20">
-                    {audit.material_claims.map((c: any, i: number) => (
-                      <li key={i} className="p-3 text-sm">
-                        <p>{c.claim}</p>
-                        <p className="mt-1 font-mono text-xs text-teal">
-                          EVIDENCE: {c.citation_refs?.join(", ") || "NONE"}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {audit.citations && audit.citations.length > 0 && (
-                <div className="border-2 border-ink bg-white">
-                  <div className="border-b-2 border-ink bg-navy px-4 py-2 font-mono text-sm font-bold text-white">
-                    SUPPORTING POLICY EXCERPTS
-                  </div>
-                  <ul className="divide-y-2 divide-ink/20">
-                    {audit.citations.map((c: any, i: number) => (
-                      <li key={i} className="p-3 text-xs">
-                        <p className="font-mono font-bold text-navy">
-                          [{c.chunk_id}] ({c.section})
-                        </p>
-                        <blockquote className="mt-1 border-l-4 border-agri pl-2 font-mono text-xs">
-                          {c.quote.slice(0, 400)}
-                          {c.quote.length > 400 ? "…" : ""}
-                        </blockquote>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {audit.missing_facts && audit.missing_facts.length > 0 && (
-                <div className="border-2 border-danger bg-white p-3 font-mono text-sm text-danger">
-                  ADDITIONAL EVIDENCE NEEDED: {audit.missing_facts.join(", ")}
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={resetAll}
-                  className="border-2 border-ink bg-white px-4 py-2 font-mono font-bold hover:bg-canvas"
+                  type="button"
+                  onClick={() => {
+                    setInputMode("text")
+                    setPastedText(SAMPLE_TEXT)
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                 >
-                  NEW REPORT
+                  <FileText className="h-4 w-4" />
+                  Load sample text
+                </button>
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Reset
                 </button>
               </div>
+            </div>
+          </section>
 
-              {events.length > 0 && (
-                <details className="border-2 border-ink bg-white p-3">
-                  <summary className="cursor-pointer font-mono text-sm font-bold">
-                    AUDIT TRAIL ({events.length} events)
-                  </summary>
-                  <ul className="mt-2 font-mono text-xs">
-                    {events.map((e, i) => (
-                      <li key={i} className="border-b border-ink/10 py-1">
-                        [{e.stage}] {e.detail}
-                      </li>
+          <AnimatePresence mode="wait">
+            {screen === "form" && (
+              <motion.section
+                key="form"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -18 }}
+                className={panelClass}
+              >
+                <div className="border-b border-slate-200 px-6 py-5 sm:px-7">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                        Step 1
+                      </p>
+                      <h3 className="mt-1 text-xl font-semibold text-slate-950">Create the case</h3>
+                    </div>
+                    <p className="max-w-xl text-sm leading-6 text-slate-600">
+                      Choose the intake mode that matches what you have in hand. The review flow remains the
+                      same after submission.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-b border-slate-200 px-6 py-4 sm:px-7">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {INPUT_MODES.map((mode) => {
+                      const active = inputMode === mode.key
+                      return (
+                        <button
+                          key={mode.key}
+                          type="button"
+                          onClick={() => setInputMode(mode.key)}
+                          className={`rounded-[22px] border p-4 text-left transition ${
+                            active
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-[#fbfaf7] text-slate-800 hover:border-slate-300 hover:bg-white"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold">{mode.label}</p>
+                          <p className={`mt-2 text-xs leading-5 ${active ? "text-white/75" : "text-slate-600"}`}>
+                            {mode.detail}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="p-6 sm:p-7">
+                  {inputMode === "form" && (
+                    <form onSubmit={handleFormSubmit} className="space-y-5">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <LabeledField label="Farmer name *" error={errors.farmer_name}>
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.farmer_name}
+                              onChange={(e) => handleInputChange("farmer_name", e.target.value)}
+                              placeholder="Ramesh Kumar"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Crop *" error={errors.crop}>
+                          <FieldShell>
+                            <select
+                              value={formData.crop}
+                              onChange={(e) => handleInputChange("crop", e.target.value)}
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none"
+                            >
+                              <option value="">Select crop</option>
+                              {INCIDENT_CROP_OPTIONS.map((crop) => (
+                                <option key={crop} value={crop}>
+                                  {crop}
+                                </option>
+                              ))}
+                            </select>
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Season *" error={errors.season}>
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.season}
+                              onChange={(e) => handleInputChange("season", e.target.value)}
+                              placeholder="Kharif 2026"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="District *" error={errors.district}>
+                          <FieldShell>
+                            <select
+                              value={formData.district}
+                              onChange={(e) => handleInputChange("district", e.target.value)}
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none"
+                            >
+                              <option value="">Select district</option>
+                              {KARNATAKA_DISTRICTS.map((district) => (
+                                <option key={district} value={district}>
+                                  {district}
+                                </option>
+                              ))}
+                            </select>
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Incident date *" error={errors.incident_date}>
+                          <FieldShell>
+                            <input
+                              type="date"
+                              value={formData.incident_date}
+                              onChange={(e) => handleInputChange("incident_date", e.target.value)}
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Cause of loss *" error={errors.cause_of_loss}>
+                          <FieldShell>
+                            <select
+                              value={formData.cause_of_loss}
+                              onChange={(e) => handleInputChange("cause_of_loss", e.target.value)}
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none"
+                            >
+                              <option value="">Select cause</option>
+                              {INCIDENT_CAUSE_OPTIONS.map((cause) => (
+                                <option key={cause} value={cause}>
+                                  {cause}
+                                </option>
+                              ))}
+                            </select>
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Affected area (hectares) *" error={errors.affected_area}>
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.affected_area}
+                              onChange={(e) => handleInputChange("affected_area", e.target.value)}
+                              placeholder="2.5"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Estimated crop loss (%) *" error={errors.loss_percent}>
+                          <FieldShell>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={formData.loss_percent}
+                              onChange={(e) => handleInputChange("loss_percent", e.target.value)}
+                              placeholder="40"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <LabeledField label="Policy number">
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.policy_number || ""}
+                              onChange={(e) => handleInputChange("policy_number", e.target.value)}
+                              placeholder="PMFBY/123456"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Application number">
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.application_number || ""}
+                              onChange={(e) => handleInputChange("application_number", e.target.value)}
+                              placeholder="CLM/2026/001"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <LabeledField label="Tehsil">
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.tehsil || ""}
+                              onChange={(e) => handleInputChange("tehsil", e.target.value)}
+                              placeholder="Vijayapura Taluk"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <LabeledField label="Village">
+                          <FieldShell>
+                            <input
+                              type="text"
+                              value={formData.village || ""}
+                              onChange={(e) => handleInputChange("village", e.target.value)}
+                              placeholder="Kondapura"
+                              className="w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+                      </div>
+
+                      <LabeledField label="Additional description">
+                        <FieldShell>
+                          <textarea
+                            value={formData.description || ""}
+                            onChange={(e) => handleInputChange("description", e.target.value)}
+                            placeholder="Briefly describe the damage, context, or any rejection note details."
+                            className="h-32 w-full resize-y border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+                          />
+                        </FieldShell>
+                      </LabeledField>
+
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                              Reviewing
+                            </>
+                          ) : (
+                            <>
+                              Run assessment
+                              <ArrowRight className="h-4 w-4" />
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(SAMPLE_FORM)}
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Load sample form
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {inputMode === "text" && (
+                    <div className="space-y-4">
+                      <LabeledField label="Paste report text">
+                        <FieldShell>
+                          <textarea
+                            value={pastedText}
+                            onChange={(e) => setPastedText(e.target.value)}
+                            placeholder="Paste the rejection notice, claim text, or field note here."
+                            className="h-80 w-full resize-y border-0 bg-transparent p-0 text-sm leading-6 outline-none placeholder:text-slate-400"
+                          />
+                        </FieldShell>
+                      </LabeledField>
+
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={handleTextSubmit}
+                          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                              Reviewing
+                            </>
+                          ) : (
+                            <>
+                              Assess text
+                              <ArrowRight className="h-4 w-4" />
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPastedText(SAMPLE_TEXT)}
+                          className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          Load sample text
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPastedText("")}
+                          className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {inputMode === "image" && (
+                    <div className="space-y-4">
+                      <label className="flex cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-[#fbfaf7] px-6 py-12 text-center transition hover:border-slate-400 hover:bg-white">
+                        <Upload className="h-10 w-10 text-slate-700" />
+                        <span className="mt-4 block text-sm font-semibold text-slate-900">
+                          Upload a report image
+                        </span>
+                        <span className="mt-2 block max-w-md text-xs leading-5 text-slate-500">
+                          JPG and PNG are supported here. OCR runs first, then the extracted text is reviewed in the same bilingual workflow.
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={isSubmitting}
+                          className="mt-5 block w-full max-w-sm text-xs text-slate-600"
+                        />
+                      </label>
+
+                      {uploadedFileName ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                          <span className="font-semibold text-slate-900">Uploaded:</span> {uploadedFileName}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </motion.section>
+            )}
+
+            {screen === "extracting" && (
+              <motion.section
+                key="extracting"
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.985 }}
+                className={`${panelClass} flex min-h-[420px] flex-col justify-center p-7 sm:p-10`}
+              >
+                <div className="mx-auto flex max-w-xl flex-col items-center text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-[#fbfaf7]">
+                    <LoaderCircle className="h-8 w-8 animate-spin text-slate-900" />
+                  </div>
+                  <h3 className="mt-5 text-2xl font-semibold tracking-tight text-slate-950">
+                    Working on the case
+                  </h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">
+                    Extracting facts, reviewing evidence, and preparing the output in {languageName}.
+                  </p>
+
+                  <div className="mt-8 grid w-full gap-3 sm:grid-cols-3">
+                    {["Extracting facts", "Checking evidence", "Formatting response"].map((item, index) => (
+                      <div
+                        key={item}
+                        className="rounded-2xl border border-slate-200 bg-[#fbfaf7] px-4 py-4 text-left"
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Stage {index + 1}
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-slate-900">{item}</p>
+                      </div>
                     ))}
-                  </ul>
-                </details>
-              )}
-            </motion.section>
-          )}
-        </AnimatePresence>
+                  </div>
+                </div>
+              </motion.section>
+            )}
+
+            {screen === "results" && audit ? (
+              <motion.section
+                key="results"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                className="space-y-6"
+              >
+                <section className={panelClass}>
+                  <div className="border-b border-slate-200 px-6 py-5 sm:px-7">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                          Review result
+                        </p>
+                        <h3 className="mt-1 text-xl font-semibold text-slate-950">Case summary</h3>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {verdict ? (
+                          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.tone}`}>
+                            <verdict.icon className="h-3.5 w-3.5" />
+                            {verdict.label}
+                          </span>
+                        ) : null}
+                        <StatusPill
+                          icon={Languages}
+                          label={`In ${languageName}`}
+                          tone="border-slate-200 bg-slate-50 text-slate-700"
+                        />
+                        {caseId ? (
+                          <StatusPill
+                            icon={Copy}
+                            label={caseId}
+                            tone="border-slate-200 bg-white text-slate-700"
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
+                    <div className="space-y-5">
+                      <p className="text-sm leading-7 text-slate-700">{audit.explanation}</p>
+
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className={softPanelClass + " p-4"}>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Confidence
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-slate-900">{audit.confidence_flag}</p>
+                        </div>
+                        <div className={softPanelClass + " p-4"}>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Evidence items
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-slate-900">{audit.citations.length}</p>
+                        </div>
+                        <div className={softPanelClass + " p-4"}>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Missing facts
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-slate-900">{audit.missing_facts.length}</p>
+                        </div>
+                      </div>
+
+                      {facts?.missing_fields?.length ? (
+                        <div className="rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                          <span className="font-semibold">Missing from the intake:</span>{" "}
+                          {facts.missing_fields.join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-[#fbfaf7] p-5">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-slate-600" />
+                        <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+                          Policy snapshot
+                        </h4>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">
+                        This view keeps the verdict, the reasoning, and the evidence together so reviewers do
+                        not have to hop between screens.
+                      </p>
+                      <div className="mt-4 space-y-3 text-sm text-slate-700">
+                        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                          <span className="text-slate-500">Category</span>
+                          <span className="font-medium text-slate-900">{facts?.category || "Not extracted"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                          <span className="text-slate-500">Incident date</span>
+                          <span className="font-medium text-slate-900">{formatDate(facts?.incident_date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                          <span className="text-slate-500">Language</span>
+                          <span className="font-medium text-slate-900">{languageName}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+                  <div className="space-y-6">
+                    <section className={panelClass}>
+                      <div className="border-b border-slate-200 px-6 py-5 sm:px-7">
+                        <div className="flex items-center gap-2">
+                          <BarChart3 className="h-4 w-4 text-slate-700" />
+                          <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+                            Extracted facts
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 px-6 py-6 sm:px-7 sm:grid-cols-2 lg:grid-cols-3">
+                        {factRows.map((item) => (
+                          <div key={item.label} className={softPanelClass + " px-4 py-3"}>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              {item.label}
+                            </p>
+                            <p className="mt-2 text-sm font-medium leading-6 text-slate-900">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className={panelClass}>
+                      <div className="border-b border-slate-200 px-6 py-5 sm:px-7">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-slate-700" />
+                          <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+                            Evidence and reasoning
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="space-y-4 px-6 py-6 sm:px-7">
+                        {audit.citations.length ? (
+                          <div className="grid gap-3">
+                            {audit.citations.map((citation) => (
+                              <article key={citation.chunk_id} className="rounded-[22px] border border-slate-200 bg-[#fbfaf7] p-4">
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  <span>{citation.doc_id}</span>
+                                  <span>•</span>
+                                  <span>{citation.section}</span>
+                                </div>
+                                <p className="mt-3 text-sm leading-6 text-slate-700">"{citation.quote}"</p>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm leading-6 text-slate-600">No citations were returned for this case.</p>
+                        )}
+
+                        {audit.material_claims.length ? (
+                          <div className="mt-6 space-y-3">
+                            {audit.material_claims.map((claim, index) => (
+                              <div key={`${claim.claim}-${index}`} className="rounded-[22px] border border-slate-200 bg-white p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div>
+                                    <p className="text-sm font-semibold text-slate-950">{claim.claim}</p>
+                                    <p className="mt-2 text-sm leading-6 text-slate-600">{claim.reasoning}</p>
+                                  </div>
+                                  <span className="rounded-full border border-slate-200 bg-[#fbfaf7] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    {claim.citation_refs.length} refs
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </section>
+                  </div>
+
+                  <div className="space-y-6">
+                    <section className={panelClass}>
+                      <div className="border-b border-slate-200 px-6 py-5 sm:px-7">
+                        <div className="flex items-center gap-2">
+                          <MessageSquareMore className="h-4 w-4 text-slate-700" />
+                          <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+                            Follow-up questions
+                          </h4>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 px-6 py-6 sm:px-7">
+                        <div className="flex flex-wrap gap-2">
+                          {currentQuickQuestions.map((question) => (
+                            <button
+                              key={question}
+                              type="button"
+                              onClick={() => setFollowUpQuestion(question)}
+                              className="rounded-full border border-slate-200 bg-[#fbfaf7] px-3 py-2 text-left text-xs font-medium leading-5 text-slate-700 transition hover:border-slate-300 hover:bg-white"
+                            >
+                              {question}
+                            </button>
+                          ))}
+                        </div>
+
+                        <LabeledField label="Ask a case-scoped question">
+                          <FieldShell>
+                            <textarea
+                              value={followUpQuestion}
+                              onChange={(e) => setFollowUpQuestion(e.target.value)}
+                              placeholder="Ask for a clause, a summary, or a deeper explanation."
+                              className="h-28 w-full resize-y border-0 bg-transparent p-0 text-sm leading-6 outline-none placeholder:text-slate-400"
+                            />
+                          </FieldShell>
+                        </LabeledField>
+
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={handleFollowUp}
+                            disabled={isFollowUpLoading}
+                            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isFollowUpLoading ? (
+                              <>
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                                Asking
+                              </>
+                            ) : (
+                              <>
+                                Ask follow-up
+                                <Send className="h-4 w-4" />
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFollowUpQuestion("")}
+                            className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            Clear
+                          </button>
+                        </div>
+
+                        {followUpError ? (
+                          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            {followUpError}
+                          </div>
+                        ) : null}
+
+                        {followUpResult ? (
+                          <div className="space-y-3 rounded-[22px] border border-slate-200 bg-[#fbfaf7] p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                                Follow-up result
+                              </p>
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                {followUpResult.decision}
+                              </span>
+                            </div>
+                            <p className="text-sm leading-6 text-slate-700">{followUpResult.reason}</p>
+                            {followUpResult.answer ? (
+                              <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700">
+                                {followUpResult.answer}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </section>
+
+                    <section className={panelClass}>
+                      <div className="border-b border-slate-200 px-6 py-5 sm:px-7">
+                        <div className="flex items-center gap-2">
+                          <Clock3 className="h-4 w-4 text-slate-700" />
+                          <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+                            Audit trail
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="space-y-3 px-6 py-6 sm:px-7">
+                        {events.length ? (
+                          events.map((event, index) => (
+                            <div key={`${event.stage}-${index}`} className="flex gap-3">
+                              <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-[#fbfaf7] text-[11px] font-semibold text-slate-500">
+                                {index + 1}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-950">{event.stage}</p>
+                                <p className="mt-1 text-sm leading-6 text-slate-600">{event.detail}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm leading-6 text-slate-600">
+                            Audit steps will appear here after a case is processed.
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                </section>
+              </motion.section>
+            ) : null}
+          </AnimatePresence>
+        </main>
+
+        <aside className="order-3 flex flex-col gap-6 xl:order-3">
+          <section className={`${panelClass} p-5`}>
+            <div className="flex items-center gap-2">
+              <PanelLeft className="h-4 w-4 text-slate-600" />
+              <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-600">
+                Case snapshot
+              </h2>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-[#fbfaf7] px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Active case
+                </p>
+                <p className="mt-2 text-sm font-medium text-slate-900">
+                  {caseId || "No case created yet"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-[#fbfaf7] px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Review language
+                </p>
+                <p className="mt-2 text-sm font-medium text-slate-900">{languageName}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-[#fbfaf7] px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Follow-up
+                </p>
+                <p className="mt-2 text-sm font-medium text-slate-900">
+                  Available after review, with the same case context
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className={`${panelClass} p-5`}>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-slate-600" />
+              <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-600">
+                Evidence view
+              </h2>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              The output is designed to stay readable: verdict at the top, facts in the middle, evidence
+              beneath, and follow-up on the same screen.
+            </p>
+          </section>
+
+          <section className={`${panelClass} p-5`}>
+            <div className="flex items-center gap-2">
+              <RefreshCcw className="h-4 w-4 text-slate-600" />
+              <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-600">
+                Shortcuts
+              </h2>
+            </div>
+            <div className="mt-4 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode("text")
+                  setPastedText(SAMPLE_TEXT)
+                }}
+                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-[#fbfaf7] px-4 py-3 text-left text-sm font-medium text-slate-900 transition hover:border-slate-300 hover:bg-white"
+              >
+                Load sample notice
+                <ArrowRight className="h-4 w-4 text-slate-500" />
+              </button>
+              <button
+                type="button"
+                onClick={resetAll}
+                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-[#fbfaf7] px-4 py-3 text-left text-sm font-medium text-slate-900 transition hover:border-slate-300 hover:bg-white"
+              >
+                Start new case
+                <ArrowRight className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+          </section>
+        </aside>
       </div>
-    </main>
+    </div>
   )
 }
