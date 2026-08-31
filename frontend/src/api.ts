@@ -77,6 +77,23 @@ export async function runAudit(caseId: string, language: string): Promise<{
   return resp.json();
 }
 
+/**
+ * Assess a claim application / incident report.
+ * Returns an assessment result with verdict, citations, and material claims.
+ * Used by the incident report frontend.
+ */
+export async function assessClaim(caseId: string, language: string = "en"): Promise<{
+  result: AuditResult;
+  audit_events: { stage: string; detail: string }[];
+}> {
+  const resp = await fetch(
+    `${BASE}/claim-assessment?case_id=${encodeURIComponent(caseId)}&language=${language}`,
+    { method: "POST" }
+  );
+  if (!resp.ok) throw new Error(`/claim-assessment: ${resp.status} ${await resp.text()}`);
+  return resp.json();
+}
+
 export async function approveGrievance(caseId: string): Promise<{ grievance_draft: GrievanceDraft }> {
   return post("/grievance/approve", { case_id: caseId });
 }

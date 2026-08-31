@@ -74,6 +74,23 @@ def audit_case(case_id: str, language: str = "en") -> dict:
             "grievance_draft": state.get("grievance_draft")}
 
 
+@app.post("/claim-assessment")
+def assess_claim(case_id: str, language: str = "en") -> dict:
+    """Public endpoint for assessing claim applications.
+
+    Used by the incident-report frontend. Returns assessment result,
+    citations, and a verdict for the farmer's incident report.
+    """
+    case = get_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="case not found")
+    graph = build_graph()
+    state = graph.invoke({"notice_text": case["notice_text"], "language": language})
+    result: AuditResult = state["result"]
+    events: list = state.get("events", [])
+    return {"result": result.model_dump(), "audit_events": [e.model_dump() for e in events]}
+
+
 class GrievanceApproval(BaseModel):
     case_id: str
 

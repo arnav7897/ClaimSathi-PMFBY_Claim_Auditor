@@ -26,14 +26,23 @@ def clean_text(text: str) -> str:
 
 
 def parse_sections(text: str) -> list[tuple[str, str]]:
-    """Return (section_label, section_text) pairs for top-level numbered sections."""
+    """Return (section_label, section_text) pairs for top-level numbered sections.
+
+    Only accepts sequentially increasing section numbers so annexure
+    sub-numbering (which restarts at 1) does not collide with main sections.
+    """
     matches = list(SECTION_RE.finditer(text))
     sections = []
-    for i, m in enumerate(matches):
-        start = m.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        label = f"{m.group(1)}"
-        sections.append((label, text[start:end].strip()))
+    expected = 1
+    boundaries: list[tuple[int, int, str]] = []
+    for m in matches:
+        num = int(m.group(1))
+        if num == expected:
+            boundaries.append((m.start(), num, m.group(0)))
+            expected += 1
+    for i, (start, num, _) in enumerate(boundaries):
+        end = boundaries[i + 1][0] if i + 1 < len(boundaries) else len(text)
+        sections.append((str(num), text[start:end].strip()))
     return sections
 
 
